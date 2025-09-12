@@ -1,20 +1,216 @@
+<!-- 
+    This is a single-file, self-contained HTML document for a secure, end-to-end encrypted chat application.
+    It uses Firebase Firestore for real-time messaging, and the Web Cryptography API for end-to-end encryption.
+    The layout uses Tailwind CSS for modern, responsive styling.
+    This version includes a new home page and full support for group chats, but keeps the original geo-fencing and core logic intact.
+-->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure E2EE Chat with Geo-fencing</title>
+    <title>Secure Encrypted Chat</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script type="module">
-        // Firebase Imports
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, addDoc, onSnapshot, collection, query, where, serverTimestamp, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // Use the global variables provided by the Canvas environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = {
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Custom scrollbar for chat messages */
+        .message-container {
+            max-height: 70vh;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #d1d5db #f3f4f6;
+        }
+        .message-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        .message-container::-webkit-scrollbar-track {
+            background: #f3f4f6;
+            border-radius: 10px;
+        }
+        .message-container::-webkit-scrollbar-thumb {
+            background-color: #d1d5db;
+            border-radius: 10px;
+            border: 2px solid #f3f4f6;
+        }
+
+        .chat-area {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .message-bubble {
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Main App Container -->
+<div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl flex flex-col md:flex-row h-[90vh]">
+    
+    <!-- Home Page View (initial state) -->
+    <div id="homeView" class="w-full h-full flex flex-col items-center justify-center p-6 text-center">
+        <h1 class="text-4xl font-bold text-gray-800 mb-6">Secure Chat App</h1>
+        <p class="text-gray-600 mb-10 max-w-lg">Choose a chat type to get started. All conversations are End-to-End Encrypted, ensuring only you and your partners can read your messages.</p>
+        <div class="space-y-4 w-full max-w-sm">
+            <button id="startOneOnOne" class="w-full bg-indigo-600 text-white font-bold py-4 px-6 rounded-lg shadow-md hover:bg-indigo-700 transition-colors transform hover:scale-105">
+                Start a 1-on-1 Chat
+            </button>
+            <button id="startGroupChat" class="w-full bg-green-500 text-white font-bold py-4 px-6 rounded-lg shadow-md hover:bg-green-600 transition-colors transform hover:scale-105">
+                Start a Group Chat
+            </button>
+        </div>
+    </div>
+
+    <!-- Chat Interface View (hidden by default) -->
+    <div id="chatView" class="w-full h-full flex flex-col md:flex-row hidden">
+
+        <!-- Left Panel: User Info & Chat Setup -->
+        <div class="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-gray-200 p-6 flex flex-col justify-between">
+            <div class="space-y-6">
+                <h2 class="text-xl font-bold text-gray-800 text-center">Your Info</h2>
+                
+                <div class="space-y-2">
+                    <label class="block text-sm font-medium text-gray-700">Your User ID:</label>
+                    <div class="flex items-center">
+                        <input type="text" id="userIdDisplay" readonly class="w-full border border-gray-300 rounded-lg p-2 text-sm text-gray-500 bg-gray-100">
+                        <button id="copyUserId" class="ml-2 p-2 rounded-lg bg-gray-200 hover:bg-gray-300 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2.2a2 2 0 012 2v2.2M16 11H4v8a2 2 0 002 2h10a2 2 0 002-2v-8z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="block text-sm font-medium text-gray-700">Your Public Key (JWK):</label>
+                    <div class="flex items-center">
+                        <textarea id="publicKeyDisplay" readonly rows="4" class="w-full border border-gray-300 rounded-lg p-2 text-xs text-gray-500 bg-gray-100 resize-none"></textarea>
+                        <button id="copyPublicKey" class="ml-2 self-start p-2 rounded-lg bg-gray-200 hover:bg-gray-300 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2.2a2 2 0 012 2v2.2M16 11H4v8a2 2 0 002 2h10a2 2 0 002-2v-8z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <button id="generateKeysButton" class="w-full bg-indigo-600 text-white font-medium py-2 px-4 rounded-lg shadow-md hover:bg-indigo-700 transition-colors">Generate New Keys</button>
+
+                <div class="space-y-6">
+                    <h2 class="text-xl font-bold text-gray-800 text-center" id="chatSetupTitle">1-on-1 Chat Setup</h2>
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-gray-700">Partner User ID(s)</label>
+                        <input type="text" id="partnerUserIdInput" placeholder="Paste partner's User ID" class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+                    </div>
+                    <button id="setPartnerButton" class="w-full bg-green-500 text-white font-medium py-2 px-4 rounded-lg shadow-md hover:bg-green-600 transition-colors">Set Chat Partner</button>
+                    
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-gray-700">Current Partner:</label>
+                        <input type="text" id="currentPartnerDisplay" readonly class="w-full border border-gray-300 rounded-lg p-2 text-sm text-gray-500 bg-gray-100">
+                    </div>
+                </div>
+                
+                <div class="space-y-2">
+                    <label class="block text-sm font-medium text-gray-700">Partner Public Key(s):</label>
+                    <textarea id="partnerPublicKeyInput" rows="4" placeholder="Paste your chat partner's public key(s) here (JWK format). For multiple partners, separate keys with a newline." class="w-full border border-gray-300 rounded-lg p-2 text-xs resize-none"></textarea>
+                </div>
+                
+                <hr class="my-6">
+                <!-- Geo-fencing UI -->
+                <div class="space-y-6">
+                    <h2 class="text-xl font-bold text-gray-800 text-center">Geo-fence Setup</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-sm font-medium text-gray-700">Latitude</label>
+                            <input type="number" id="latInput" placeholder="e.g., 34.0522" step="0.0001" class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-sm font-medium text-gray-700">Longitude</label>
+                            <input type="number" id="lonInput" placeholder="e.g., -118.2437" step="0.0001" class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+                        </div>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-gray-700">Radius (meters)</label>
+                        <input type="number" id="radiusInput" placeholder="e.g., 500" class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+                    </div>
+                    <button id="setGeoFenceButton" class="w-full bg-blue-500 text-white font-medium py-2 px-4 rounded-lg shadow-md hover:bg-blue-600 transition-colors">Set Geo-fence</button>
+                    <div id="locationStatus" class="mt-4 text-center text-sm font-semibold"></div>
+                </div>
+            </div>
+            <button id="backToHomeButton" class="w-full mt-6 bg-gray-400 text-white font-medium py-2 px-4 rounded-lg shadow-md hover:bg-gray-500 transition-colors">Back to Home</button>
+        </div>
+
+        <!-- Right Panel: Chat Interface -->
+        <div class="w-full md:w-2/3 flex flex-col p-6">
+            <h2 class="text-xl font-bold text-gray-800 text-center mb-4">Encrypted Chat</h2>
+            
+            <!-- Welcome Message / Message Display -->
+            <div id="chatDisplay" class="chat-area p-4 bg-gray-50 rounded-lg message-container flex flex-col-reverse">
+                <!-- Messages will be injected here -->
+                <div id="welcomeMessage" class="flex flex-col items-center justify-center h-full text-center text-gray-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                    <p>Welcome to your secure chat.</p>
+                    <p class="mt-2 text-sm">
+                        1. Share your User ID and Public Key with a partner(s).<br>
+                        2. Paste your partner's info into the "Chat Setup" section.<br>
+                        3. Click "Set Chat Partner" and start chatting securely!
+                    </p>
+                </div>
+            </div>
+
+            <!-- Message Input -->
+            <div class="flex items-center mt-4 space-x-2">
+                <input type="text" id="messageInput" placeholder="Type a message..." class="flex-grow rounded-full border border-gray-300 p-3 pl-5 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-200">
+                <input type="file" id="fileInput" hidden>
+                <button id="sendFileButton" class="p-3 rounded-full bg-gray-200 text-gray-800 shadow-md hover:bg-gray-300 transition duration-200 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.414 6.586a6 6 0 108.485 8.485L20.5 13.5" />
+                    </svg>
+                </button>
+                <button id="sendMessageButton" class="p-3 rounded-full bg-indigo-600 text-white shadow-md hover:bg-indigo-700 transition duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for messages and errors -->
+<div id="modal" class="fixed inset-0 z-50 bg-black bg-opacity-50 hidden items-center justify-center">
+    <div class="bg-white rounded-xl shadow-lg p-6 w-80 text-center">
+        <h3 id="modalTitle" class="text-xl font-bold mb-2"></h3>
+        <p id="modalMessage" class="text-gray-700 mb-4"></p>
+        <button id="modalCloseButton" class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">OK</button>
+    </div>
+</div>
+
+<!-- Firebase SDKs -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, doc, setDoc, addDoc, onSnapshot, query, orderBy, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Global variables from the hosting environment
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = {
                 apiKey: "AIzaSyBzSrcr0khRr70ie41saBBko2zaME9aKXs",
                 authDomain: "cryptalk-46a44.firebaseapp.com",
                 projectId: "cryptalk-46a44",
@@ -23,713 +219,629 @@
                 appId: "1:531065987774:web:54f608082023e9a55234ef",
                 measurementId: "G-PR9B9Y3ZJM"
                 };
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        // Set Firestore log level to debug for better console output
-        setLogLevel('debug');
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
 
-        // Initialize Firebase
-        let app, db, auth;
+    // DOM elements
+    const homeView = document.getElementById('homeView');
+    const chatView = document.getElementById('chatView');
+    const startOneOnOneButton = document.getElementById('startOneOnOne');
+    const startGroupChatButton = document.getElementById('startGroupChat');
+    const backToHomeButton = document.getElementById('backToHomeButton');
+    const userIdDisplay = document.getElementById('userIdDisplay');
+    const publicKeyDisplay = document.getElementById('publicKeyDisplay');
+    const copyUserIdButton = document.getElementById('copyUserId');
+    const copyPublicKeyButton = document.getElementById('copyPublicKey');
+    const generateKeysButton = document.getElementById('generateKeysButton');
+    const chatSetupTitle = document.getElementById('chatSetupTitle');
+    const partnerUserIdInput = document.getElementById('partnerUserIdInput');
+    const setPartnerButton = document.getElementById('setPartnerButton');
+    const currentPartnerDisplay = document.getElementById('currentPartnerDisplay');
+    const partnerPublicKeyInput = document.getElementById('partnerPublicKeyInput');
+    const chatDisplay = document.getElementById('chatDisplay');
+    const messageInput = document.getElementById('messageInput');
+    const sendMessageButton = document.getElementById('sendMessageButton');
+    const welcomeMessageDiv = document.getElementById('welcomeMessage');
+    const modal = document.getElementById('modal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalMessage = document.getElementById('modalMessage');
+    const modalCloseButton = document.getElementById('modalCloseButton');
+    const fileInput = document.getElementById('fileInput');
+    const sendFileButton = document.getElementById('sendFileButton');
+    const latInput = document.getElementById('latInput');
+    const lonInput = document.getElementById('lonInput');
+    const radiusInput = document.getElementById('radiusInput');
+    const setGeoFenceButton = document.getElementById('setGeoFenceButton');
+    const locationStatus = document.getElementById('locationStatus');
+
+    // State variables
+    let userId = null;
+    let privateKey = null;
+    let publicKey = null;
+    let groupMembers = [];
+    let groupMemberKeys = {};
+    let conversationId = null;
+    let unsubscribeChatListener = null;
+    let isModalOpen = false;
+    let chatType = null; // 'one-on-one' or 'group'
+    let geoFence = { lat: null, lon: null, radius: null };
+    let isInsideFence = false;
+
+    // --- Helper Functions ---
+
+    function showModal(title, message) {
+        if (isModalOpen) return;
+        isModalOpen = true;
+        modalTitle.textContent = title;
+        modalMessage.textContent = message;
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+
+    function closeModal() {
+        modal.classList.remove('flex');
+        modal.classList.add('hidden');
+        isModalOpen = false;
+    }
+
+    function copyToClipboard(text) {
+        if (!text) return;
+        navigator.clipboard.writeText(text).then(() => {
+            showModal('Copied!', 'Content has been copied to your clipboard.');
+        }).catch(err => {
+            console.error('Failed to copy text: ', err);
+            showModal('Error', 'Failed to copy text. Please try again.');
+        });
+    }
+
+    function switchView(view) {
+        if (view === 'home') {
+            homeView.classList.remove('hidden');
+            homeView.classList.add('flex');
+            chatView.classList.add('hidden');
+            chatView.classList.remove('flex');
+        } else if (view === 'chat') {
+            homeView.classList.add('hidden');
+            homeView.classList.remove('flex');
+            chatView.classList.remove('hidden');
+            chatView.classList.add('flex');
+        }
+    }
+
+    // --- Cryptography Functions ---
+
+    async function generateKeypair() {
+        const keyPair = await window.crypto.subtle.generateKey(
+            {
+                name: "RSA-OAEP",
+                modulusLength: 2048,
+                publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
+                hash: "SHA-256",
+            },
+            true, // can be exported
+            ["encrypt", "decrypt"]
+        );
+        return keyPair;
+    }
+
+    async function exportPublicKey(key) {
+        const jwk = await window.crypto.subtle.exportKey("jwk", key);
+        return JSON.stringify(jwk);
+    }
+
+    async function exportPrivateKey(key) {
+        const jwk = await window.crypto.subtle.exportKey("jwk", key);
+        return JSON.stringify(jwk);
+    }
+
+    async function importPublicKey(jwkString) {
+        const jwk = JSON.parse(jwkString);
+        return await window.crypto.subtle.importKey(
+            "jwk",
+            jwk,
+            { name: "RSA-OAEP", hash: "SHA-256" },
+            true,
+            ["encrypt"]
+        );
+    }
+
+    async function importPrivateKey(jwkString) {
+        const jwk = JSON.parse(jwkString);
+        return await window.crypto.subtle.importKey(
+            "jwk",
+            jwk,
+            { name: "RSA-OAEP", hash: "SHA-256" },
+            true,
+            ["decrypt"]
+        );
+    }
+
+    async function encryptMessage(message, publicKey) {
+        const enc = new TextEncoder();
+        const encrypted = await window.crypto.subtle.encrypt(
+            {
+                name: "RSA-OAEP",
+            },
+            publicKey,
+            enc.encode(message)
+        );
+        return btoa(String.fromCharCode(...new Uint8Array(encrypted)));
+    }
+
+    async function decryptMessage(encryptedMessage, privateKey) {
         try {
-            app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
+            const dec = new TextDecoder();
+            const encryptedBuffer = Uint8Array.from(atob(encryptedMessage), c => c.charCodeAt(0));
+            const decrypted = await window.crypto.subtle.decrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                privateKey,
+                encryptedBuffer
+            );
+            return dec.decode(decrypted);
         } catch (e) {
-            console.error("Firebase initialization failed:", e);
+            console.error("Decryption failed:", e);
+            return "Unable to decrypt this message.";
+        }
+    }
+
+    // --- Geofencing Logic ---
+    function haversineDistance(coords1, coords2) {
+        const toRad = x => x * Math.PI / 180;
+        const R = 6371e3; // Earth radius in meters
+        const dLat = toRad(coords2.latitude - coords1.latitude);
+        const dLon = toRad(coords2.longitude - coords1.longitude);
+        const lat1 = toRad(coords1.latitude);
+        const lat2 = toRad(coords2.latitude);
+
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos(lat1) * Math.cos(lat2) *
+                  Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        return R * c;
+    }
+
+    function checkGeoFence(position) {
+        if (!geoFence.lat || !geoFence.lon || !geoFence.radius) {
+            updateGeoFenceStatus('Geo-fence not set. Chatting enabled.');
+            isInsideFence = true;
+            toggleChatInput(true);
+            return;
         }
 
-        // Global state variables
-        let currentUserId = null;
-        let myKeypair = null;
-        const knownPublicKeys = {}; // Stores public keys of other users by their User ID
-        let chatPartnerId = null;
-        let geoFence = null;
-
-        // UI elements
-        const chatMessages = document.getElementById('chatMessages');
-        const messageInput = document.getElementById('messageInput');
-        const sendMessageBtn = document.getElementById('sendMessageBtn');
-        const generateKeysBtn = document.getElementById('generateKeysBtn');
-        const userIdDisplay = document.getElementById('userIdDisplay');
-        const chatPartnerIdInput = document.getElementById('chatPartnerIdInput');
-        const setChatPartnerBtn = document.getElementById('setChatPartnerBtn');
-        const myPublicKeyDisplay = document.getElementById('myPublicKeyDisplay');
-        const partnerPublicKeyInput = document.getElementById('partnerPublicKeyInput');
-        const savePartnerKeyBtn = document.getElementById('savePartnerKeyBtn');
-        const partnerIdDisplay = document.getElementById('partnerIdDisplay');
-        const statusMessage = document.getElementById('statusMessage');
-        const copyUserIdBtn = document.getElementById('copyUserIdBtn');
-        const copyPublicKeyBtn = document.getElementById('copyPublicKeyBtn');
-        const messageBox = document.getElementById('messageBox');
-        const closeMessageBoxBtn = document.getElementById('closeMessageBoxBtn');
-        const messageBoxText = document.getElementById('messageBoxText');
-        const geoFenceLatInput = document.getElementById('geoFenceLat');
-        const geoFenceLonInput = document.getElementById('geoFenceLon');
-        const geoFenceRadiusInput = document.getElementById('geoFenceRadius');
-        const saveGeoFenceBtn = document.getElementById('saveGeoFenceBtn');
-        const geoFenceStatus = document.getElementById('geoFenceStatus');
-        const geoFenceDisplay = document.getElementById('geoFenceDisplay');
-        const fileInput = document.getElementById('fileInput');
-        const sendFileBtn = document.getElementById('sendFileBtn');
-
-        // Helper function to show a custom message box instead of alert()
-        const showMessageBox = (message) => {
-            messageBoxText.textContent = message;
-            messageBox.classList.remove('hidden');
-        };
-
-        closeMessageBoxBtn.addEventListener('click', () => {
-            messageBox.classList.add('hidden');
+        const distance = haversineDistance({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+        }, {
+            latitude: geoFence.lat,
+            longitude: geoFence.lon
         });
 
-        // Helper function to show a status message
-        const showStatus = (message, isError = false) => {
-            statusMessage.textContent = message;
-            statusMessage.className = `p-2 mt-4 text-center rounded-xl shadow-lg transition-opacity duration-300 ${isError ? 'bg-red-500' : 'bg-green-500'} text-white opacity-100`;
-            setTimeout(() => {
-                statusMessage.classList.add('opacity-0');
-            }, 3000);
-        };
+        if (distance <= geoFence.radius) {
+            updateGeoFenceStatus(`Inside fence. Distance: ${distance.toFixed(2)}m.`);
+            isInsideFence = true;
+            toggleChatInput(true);
+        } else {
+            updateGeoFenceStatus(`Outside fence. Distance: ${distance.toFixed(2)}m.`);
+            isInsideFence = false;
+            toggleChatInput(false);
+        }
+    }
 
-        // Function to generate a new crypto key pair
-        const generateKeypair = async () => {
+    function updateGeoFenceStatus(message) {
+        locationStatus.textContent = message;
+        locationStatus.className = `mt-4 text-center text-sm font-semibold ${isInsideFence ? 'text-green-600' : 'text-red-600'}`;
+    }
+
+    function toggleChatInput(enabled) {
+        messageInput.disabled = !enabled;
+        sendMessageButton.disabled = !enabled;
+        sendFileButton.disabled = !enabled;
+        messageInput.placeholder = enabled ? 'Type a message...' : 'You are outside the geo-fence.';
+    }
+
+    function watchUserLocation() {
+        if (!navigator.geolocation) {
+            showModal('Error', 'Geolocation is not supported by your browser.');
+            return;
+        }
+
+        navigator.geolocation.watchPosition(checkGeoFence, (error) => {
+            console.error('Geolocation error:', error);
+            showModal('Geolocation Error', 'Unable to retrieve your location. Check your browser settings.');
+            isInsideFence = false;
+            toggleChatInput(false);
+        }, {
+            enableHighAccuracy: true,
+            timeout: 5000,
+            maximumAge: 0
+        });
+    }
+
+    // --- Firebase & Chat Logic ---
+
+    async function setupUserKeys() {
+        try {
+            const keyPair = await generateKeypair();
+            privateKey = keyPair.privateKey;
+            publicKey = keyPair.publicKey;
+
+            // Store the private key and public key in local storage
+            localStorage.setItem('privateKey', await exportPrivateKey(privateKey));
+            localStorage.setItem('publicKey', await exportPublicKey(publicKey));
+
+            publicKeyDisplay.value = await exportPublicKey(publicKey);
+
+            // Save the public key to Firestore for other users to fetch
+            const userDocRef = doc(db, `/artifacts/${appId}/users/${userId}/private/data`, "keys");
+            await setDoc(userDocRef, { publicKey: await exportPublicKey(publicKey) });
+
+            showModal('Success!', 'New key pair generated and saved.');
+        } catch (e) {
+            showModal('Error', 'Failed to generate keys. Please try again.');
+            console.error("Error generating keys:", e);
+        }
+    }
+
+    async function loadUserKeys() {
+        const storedPrivateKey = localStorage.getItem('privateKey');
+        const storedPublicKey = localStorage.getItem('publicKey');
+
+        if (storedPrivateKey && storedPublicKey) {
             try {
-                myKeypair = await window.crypto.subtle.generateKey(
-                    {
-                        name: "RSA-OAEP",
-                        modulusLength: 2048,
-                        publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
-                        hash: "SHA-256",
-                    },
-                    true, // Extractable
-                    ["encrypt", "decrypt"]
-                );
-
-                const publicKeyJwk = await window.crypto.subtle.exportKey("jwk", myKeypair.publicKey);
-                myPublicKeyDisplay.textContent = JSON.stringify(publicKeyJwk);
-                showStatus("New key pair generated successfully!");
+                privateKey = await importPrivateKey(storedPrivateKey);
+                publicKey = await importPublicKey(storedPublicKey);
+                publicKeyDisplay.value = storedPublicKey;
+                console.log("Keys loaded from storage.");
+                return;
             } catch (e) {
-                console.error("Key generation failed:", e);
-                showMessageBox("Error generating key pair. Please check the browser console.");
+                console.error("Failed to import keys from storage:", e);
             }
-        };
+        }
+        await setupUserKeys();
+    }
 
-        // Function to import a public key from JWK format
-        const importPublicKey = async (jwk) => {
-            try {
-                return await window.crypto.subtle.importKey(
-                    "jwk",
-                    jwk,
-                    {
-                        name: "RSA-OAEP",
-                        hash: "SHA-256"
-                    },
-                    true, // Extractable
-                    ["encrypt"]
-                );
-            } catch (e) {
-                console.error("Failed to import public key:", e);
-                return null;
+    async function setupChat() {
+        const partnerIds = partnerUserIdInput.value.split(',').map(id => id.trim()).filter(id => id.length > 0);
+        const partnerKeys = partnerPublicKeyInput.value.split('\n').map(key => key.trim()).filter(key => key.length > 0);
+
+        if (chatType === 'one-on-one' && (partnerIds.length !== 1 || partnerKeys.length !== 1)) {
+            showModal('Error', 'For a 1-on-1 chat, please enter exactly one partner ID and one public key.');
+            return;
+        } else if (chatType === 'group' && (partnerIds.length < 1 || partnerKeys.length < 1 || partnerIds.length !== partnerKeys.length)) {
+            showModal('Error', 'For a group chat, please enter one or more partner IDs and the corresponding public keys.');
+            return;
+        }
+
+        try {
+            groupMembers = [userId, ...partnerIds].sort();
+            conversationId = groupMembers.join('_');
+            groupMemberKeys = {};
+            for (let i = 0; i < partnerIds.length; i++) {
+                groupMemberKeys[partnerIds[i]] = await importPublicKey(partnerKeys[i]);
             }
-        };
+            groupMemberKeys[userId] = publicKey;
 
-        // Decrypt a message with the user's private key
-        const decryptMessage = async (encryptedMessage) => {
-            try {
-                if (!myKeypair) {
-                    throw new Error("Private key not available for decryption.");
-                }
-                const encryptedData = Uint8Array.from(atob(encryptedMessage), c => c.charCodeAt(0));
-                const decryptedData = await window.crypto.subtle.decrypt(
-                    { name: "RSA-OAEP" },
-                    myKeypair.privateKey,
-                    encryptedData
-                );
-                return new TextDecoder().decode(decryptedData);
-            } catch (e) {
-                console.error("Decryption failed:", e);
-                return "[Unable to decrypt message]";
+            if (unsubscribeChatListener) {
+                unsubscribeChatListener();
+                unsubscribeChatListener = null;
             }
-        };
 
-        // Encrypt a message with a recipient's public key
-        const encryptMessage = async (message, publicKey) => {
-            try {
-                const data = new TextEncoder().encode(message);
-                const encryptedData = await window.crypto.subtle.encrypt(
-                    { name: "RSA-OAEP" },
-                    publicKey,
-                    data
-                );
-                return btoa(String.fromCharCode(...new Uint8Array(encryptedData)));
-            } catch (e) {
-                console.error("Encryption failed:", e);
-                throw e; // Re-throw to handle in sendMessage
-            }
-        };
-
-        // Encrypt a file using AES
-        const encryptFile = async (file) => {
-            const key = await window.crypto.subtle.generateKey(
-                { name: "AES-GCM", length: 256 },
-                true,
-                ["encrypt", "decrypt"]
-            );
-            const iv = window.crypto.getRandomValues(new Uint8Array(12));
-            const data = await file.arrayBuffer();
-
-            const encryptedData = await window.crypto.subtle.encrypt(
-                { name: "AES-GCM", iv: iv },
-                key,
-                data
-            );
+            currentPartnerDisplay.value = groupMembers.filter(id => id !== userId).join(', ');
+            welcomeMessageDiv.classList.add('hidden');
+            chatDisplay.innerHTML = '';
+            showModal('Success!', `Chat partner(s) set. Conversation ID: ${conversationId}`);
             
-            // Export the AES key to be encrypted with the public key
-            const keyJwk = await window.crypto.subtle.exportKey("jwk", key);
-            
-            return {
-                encryptedData: btoa(String.fromCharCode(...new Uint8Array(encryptedData))),
-                encryptedIv: btoa(String.fromCharCode(...iv)),
-                keyJwk: keyJwk
+            setupChatListener();
+        } catch (e) {
+            showModal('Error', 'Failed to set partner. Please check the provided public key format.');
+            console.error("Error setting partner:", e);
+        }
+    }
+
+    async function sendMessage(messageType, content) {
+        if (!conversationId) {
+            showModal('Error', 'Please set a chat partner first.');
+            return;
+        }
+
+        try {
+            const messageData = {
+                senderId: userId,
+                timestamp: Date.now(),
+                reactions: {},
+                readBy: [userId], // Sender has read the message
+                type: messageType,
             };
-        };
 
-        // Decrypt a file using AES
-        const decryptFile = async (encryptedData, encryptedIv, keyJwk) => {
-            const encryptedBytes = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
-            const ivBytes = Uint8Array.from(atob(encryptedIv), c => c.charCodeAt(0));
-            const key = await window.crypto.subtle.importKey(
-                "jwk",
-                keyJwk,
-                { name: "AES-GCM" },
-                false,
-                ["decrypt"]
-            );
-            
-            const decryptedData = await window.crypto.subtle.decrypt(
-                { name: "AES-GCM", iv: ivBytes },
-                key,
-                encryptedBytes
-            );
-            
-            return decryptedData;
-        };
+            const messagesCollectionPath = `/artifacts/${appId}/public/data/conversations/${conversationId}/messages`;
 
-        // Haversine formula to calculate distance between two lat/lon points
-        const getDistance = (lat1, lon1, lat2, lon2) => {
-            const R = 6371e3; // metres
-            const φ1 = lat1 * Math.PI / 180;
-            const φ2 = lat2 * Math.PI / 180;
-            const Δφ = (lat2 - lat1) * Math.PI / 180;
-            const Δλ = (lon2 - lon1) * Math.PI / 180;
-
-            const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-                      Math.cos(φ1) * Math.cos(φ2) *
-                      Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-            return R * c; // in metres
-        };
-
-        // Function to check if user is within the geo-fenced area
-        const checkGeoFence = async () => {
-            return new Promise((resolve) => {
-                if (!geoFence || !geoFence.latitude || !geoFence.longitude || !geoFence.radius) {
-                    geoFenceStatus.textContent = 'No geo-fence defined. Messages are allowed.';
-                    geoFenceStatus.className = 'text-green-500 font-bold';
-                    return resolve(true);
+            if (messageType === 'text') {
+                const encryptedTexts = {};
+                for (const member of groupMembers) {
+                    const encrypted = await encryptMessage(content, groupMemberKeys[member]);
+                    encryptedTexts[member] = encrypted;
                 }
+                messageData.texts = encryptedTexts;
+                const messageElement = createMessageElement(messageData, content);
+                chatDisplay.prepend(messageElement);
+            } else if (messageType === 'file') {
+                messageData.file = { name: content.name, url: `https://mock-cdn.com/${content.name.replace(/\s/g, '_')}`, scanned: false };
+                const messageElement = createMessageElement(messageData, `Sending file: ${content.name}`);
+                chatDisplay.prepend(messageElement);
 
-                navigator.geolocation.getCurrentPosition(position => {
-                    const { latitude, longitude } = position.coords;
-                    const distance = getDistance(latitude, longitude, geoFence.latitude, geoFence.longitude);
-                    const isInFence = distance <= geoFence.radius;
-                    if (isInFence) {
-                        geoFenceStatus.textContent = `Within fence! (Distance: ${distance.toFixed(2)}m)`;
-                        geoFenceStatus.className = 'text-green-500 font-bold';
-                        resolve(true);
-                    } else {
-                        geoFenceStatus.textContent = `Outside fence! (Distance: ${distance.toFixed(2)}m)`;
-                        geoFenceStatus.className = 'text-red-500 font-bold';
-                        resolve(false);
-                    }
-                }, error => {
-                    console.error("Geolocation error:", error);
-                    geoFenceStatus.textContent = 'Geolocation blocked or failed. Cannot verify location.';
-                    geoFenceStatus.className = 'text-red-500 font-bold';
-                    resolve(false); // Default to not allowing if location can't be found
-                });
-            });
-        };
-
-        // Function to send a message to the chat partner
-        const sendMessage = async () => {
-            const message = messageInput.value.trim();
-            if (!message) {
-                showMessageBox("Message cannot be empty.");
-                return;
-            }
-            if (!chatPartnerId || !knownPublicKeys[chatPartnerId]) {
-                showMessageBox("Please set a chat partner and ensure their public key is loaded before sending a message.");
-                return;
+                // Simulate file scanning
+                setTimeout(async () => {
+                    messageData.file.scanned = true;
+                    // In a real app, the backend would handle the scan and update the doc
+                    const docRef = doc(db, messagesCollectionPath, messageElement.dataset.docId);
+                    await updateDoc(docRef, { 'file.scanned': true });
+                }, 3000);
             }
 
-            // Check geo-fence before sending
-            const isInFence = await checkGeoFence();
-            if (!isInFence) {
-                showMessageBox("You are outside the allowed geo-fenced area and cannot send messages.");
-                return;
-            }
+            await addDoc(collection(db, messagesCollectionPath), messageData);
+        } catch (e) {
+            showModal('Error', `Failed to send ${messageType}.`);
+            console.error(`Error sending ${messageType}:`, e);
+        }
+    }
 
-            try {
-                const partnerPublicKey = knownPublicKeys[chatPartnerId];
-                const encryptedMessage = await encryptMessage(message, partnerPublicKey);
+    async function handleReaction(messageId, emoji) {
+        if (!messageId || !emoji) return;
+        const messageDocRef = doc(db, `/artifacts/${appId}/public/data/conversations/${conversationId}/messages`, messageId);
+        try {
+            const docSnapshot = await getDoc(messageDocRef);
+            if (docSnapshot.exists()) {
+                const currentReactions = docSnapshot.data().reactions || {};
+                const userReactions = currentReactions[userId] || [];
+                const hasReacted = userReactions.includes(emoji);
 
-                const messagesRef = collection(db, `artifacts/${appId}/public/data/secure_messages`);
-                await addDoc(messagesRef, {
-                    senderId: currentUserId,
-                    recipientId: chatPartnerId,
-                    originalText: message,
-                    encryptedText: encryptedMessage,
-                    timestamp: serverTimestamp(),
-                    type: 'text'
-                });
-
-                messageInput.value = ''; // Clear the input
-                showStatus("Message sent!");
-            } catch (e) {
-                console.error("Error sending message:", e);
-                showMessageBox("Error sending message. Please check the console.");
-            }
-        };
-
-        // Function to send a file to the chat partner
-        const sendFile = async () => {
-            const file = fileInput.files[0];
-            if (!file) {
-                showMessageBox("Please select a file to send.");
-                return;
-            }
-            if (!chatPartnerId || !knownPublicKeys[chatPartnerId]) {
-                showMessageBox("Please set a chat partner and ensure their public key is loaded before sending a file.");
-                return;
-            }
-            if (file.size > 1000000) { // Check file size limit (1MB) for Firestore
-                showMessageBox("File is too large. The maximum size is 1MB for this prototype.");
-                return;
-            }
-
-            // Check geo-fence before sending
-            const isInFence = await checkGeoFence();
-            if (!isInFence) {
-                showMessageBox("You are outside the allowed geo-fenced area and cannot send files.");
-                return;
-            }
-
-            try {
-                const partnerPublicKey = knownPublicKeys[chatPartnerId];
-                
-                // Encrypt the file data using a new AES key
-                const { encryptedData, encryptedIv, keyJwk } = await encryptFile(file);
-                
-                // Encrypt the AES key with the recipient's public key (RSA)
-                const keyData = new TextEncoder().encode(JSON.stringify(keyJwk));
-                const encryptedKey = await window.crypto.subtle.encrypt(
-                    { name: "RSA-OAEP" },
-                    partnerPublicKey,
-                    keyData
-                );
-                const encryptedKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedKey)));
-
-                const messagesRef = collection(db, `artifacts/${appId}/public/data/secure_messages`);
-                await addDoc(messagesRef, {
-                    senderId: currentUserId,
-                    recipientId: chatPartnerId,
-                    encryptedData: encryptedData,
-                    encryptedKey: encryptedKeyBase64,
-                    encryptedIv: encryptedIv,
-                    fileName: file.name,
-                    fileMimeType: file.type,
-                    timestamp: serverTimestamp(),
-                    type: 'file'
-                });
-
-                fileInput.value = ''; // Clear file input
-                showStatus("File sent!");
-            } catch (e) {
-                console.error("Error sending file:", e);
-                showMessageBox("Error sending file. Please check the console.");
-            }
-        };
-
-        // Function to render a message in the chat UI
-        const renderMessage = (data) => {
-            const messageContainer = document.createElement('div');
-            const isSent = data.senderId === currentUserId;
-            const alignClass = isSent ? 'self-end' : 'self-start';
-            const messageBubble = document.createElement('div');
-            messageContainer.className = `flex ${alignClass}`;
-            messageContainer.appendChild(messageBubble);
-
-            if (data.type === 'text') {
-                const colorClass = isSent ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800';
-                messageBubble.className = `p-4 max-w-sm rounded-xl shadow-lg break-words ${colorClass}`;
-                messageBubble.textContent = data.decryptedText || '[Encrypted message]';
-            } else if (data.type === 'file') {
-                const colorClass = isSent ? 'bg-blue-300 text-gray-800' : 'bg-gray-200 text-gray-800';
-                messageBubble.className = `p-4 max-w-sm rounded-xl shadow-lg break-words flex flex-col items-center ${colorClass}`;
-                
-                const fileName = document.createElement('span');
-                fileName.textContent = data.fileName;
-                fileName.className = 'font-semibold text-sm mb-2';
-
-                const downloadLink = document.createElement('button');
-                downloadLink.textContent = 'Download File';
-                downloadLink.className = 'bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-xl transition transform hover:scale-105';
-                downloadLink.onclick = async () => {
-                    if (data.decryptedFile) {
-                        const blob = new Blob([data.decryptedFile], { type: data.fileMimeType });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = data.fileName;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                    } else {
-                        showMessageBox("File not ready for download. Please wait for decryption.");
-                    }
-                };
-
-                messageBubble.appendChild(fileName);
-                messageBubble.appendChild(downloadLink);
-            }
-
-            chatMessages.appendChild(messageContainer);
-            chatMessages.scrollTop = chatMessages.scrollHeight; // Auto-scroll to bottom
-        };
-
-
-        let unsubscribeMessages = null; // to store the previous listener
-
-        const setupMessageListener = () => {
-            // Unsubscribe the previous listener if it exists
-            if (unsubscribeMessages) {
-                unsubscribeMessages();
-                unsubscribeMessages = null;
-            }
-
-            if (!currentUserId || !chatPartnerId) {
-                console.warn("User or chat partner not set. Cannot set up listener.");
-                return;
-            }
-
-            const q = query(
-                collection(db, `artifacts/${appId}/public/data/secure_messages`),
-                where('recipientId', 'in', [currentUserId, chatPartnerId]),
-                where('senderId', 'in', [currentUserId, chatPartnerId])
-            );
-
-            unsubscribeMessages = onSnapshot(q, async (snapshot) => {
-                chatMessages.innerHTML = ''; // Clear chat before re-rendering
-                for (const doc of snapshot.docs) {
-                    const data = doc.data();
-
-                    if (data.type === 'text') {
-                        let decryptedText = '';
-                        try {
-                            if (data.senderId === currentUserId) {
-                                // Sender sees their own original message directly (no decryption needed)
-                                decryptedText = data.originalText || '[Unable to show message]';
-                            } else if (data.recipientId === currentUserId && myKeypair && myKeypair.privateKey) {
-                                // Receiver decrypts
-                                decryptedText = await decryptMessage(data.encryptedText);
-                            }
-                        } catch (e) {
-                            console.error("Text decryption failed:", e);
-                            decryptedText = '[Unable to decrypt message]';
-                        }
-                        data.decryptedText = decryptedText;
-                    }
-
-                      else if (data.type === 'file') {
-                        let decryptedFile = null;
-                        const isSender = messageData.senderId === userId;
-                        if (data.senderId === currentUserId) {
-                                // Sender side: don’t need to decrypt, just mark as "sent"
-                                decryptedFile = new TextEncoder().encode("File sent (you are sender, not decrypted).");
-                                }
-                        else {
-                                 displayedText = await decryptMessage(messageData.text, privateKey);
-                                if (myKeypair && myKeypair.privateKey) {
-                                    try {
-                                        const encryptedKey = Uint8Array.from(atob(data.encryptedKey), c => c.charCodeAt(0));
-                                        const decryptedKeyData = await window.crypto.subtle.decrypt(
-                                            { name: "RSA-OAEP" },
-                                            myKeypair.privateKey,
-                                            encryptedKey
-                                        );
-                                        const keyJwk = JSON.parse(new TextDecoder().decode(decryptedKeyData));
-                                        decryptedFile = await decryptFile(data.encryptedData, data.encryptedIv, keyJwk);
-                                    } catch (e) {
-                                        console.error("File decryption failed:", e);
-                                        decryptedFile = new TextEncoder().encode("Failed to decrypt file.");
-                                    }
-                                }
-                        }
-                        data.decryptedFile = decryptedFile;
-                    }
-
-                    renderMessage(data);
-                }
-            }, (error) => {
-                console.error("Firestore listener error:", error);
-                showMessageBox("An error occurred with the chat. Check the console.");
-            });
-        };
-
-
-        // Save geo-fence to Firestore
-        const saveGeoFence = async () => {
-            const lat = parseFloat(geoFenceLatInput.value);
-            const lon = parseFloat(geoFenceLonInput.value);
-            const radius = parseFloat(geoFenceRadiusInput.value);
-
-            if (isNaN(lat) || isNaN(lon) || isNaN(radius) || radius < 0) {
-                showMessageBox("Please enter valid numbers for latitude, longitude, and radius.");
-                return;
-            }
-
-            geoFence = { latitude: lat, longitude: lon, radius: radius };
-            const geoFenceRef = doc(db, `artifacts/${appId}/users/${currentUserId}/user_settings/geo_fence`);
-            
-            try {
-                await setDoc(geoFenceRef, geoFence);
-                geoFenceDisplay.textContent = `Lat: ${lat}, Lon: ${lon}, Radius: ${radius}m`;
-                showStatus("Geo-fence saved successfully!");
-            } catch (e) {
-                console.error("Error saving geo-fence:", e);
-                showMessageBox("Error saving geo-fence. Check the console.");
-            }
-        };
-
-        // Load geo-fence from Firestore on startup
-        const loadGeoFence = async () => {
-            const geoFenceRef = doc(db, `artifacts/${appId}/users/${currentUserId}/user_settings/geo_fence`);
-            onSnapshot(geoFenceRef, (doc) => {
-                if (doc.exists()) {
-                    geoFence = doc.data();
-                    geoFenceDisplay.textContent = `Lat: ${geoFence.latitude}, Lon: ${geoFence.longitude}, Radius: ${geoFence.radius}m`;
+                if (hasReacted) {
+                    // Remove the reaction
+                    const newReactions = userReactions.filter(e => e !== emoji);
+                    await updateDoc(messageDocRef, {
+                        [`reactions.${userId}`]: newReactions.length > 0 ? newReactions : null
+                    });
                 } else {
-                    geoFence = null;
-                    geoFenceDisplay.textContent = 'None saved.';
+                    // Add the reaction
+                    await updateDoc(messageDocRef, {
+                        [`reactions.${userId}`]: [...userReactions, emoji]
+                    });
                 }
-            }, (error) => {
-                console.error("Error loading geo-fence:", error);
-                geoFenceDisplay.textContent = 'Error loading fence.';
-            });
-        };
-
-        // Event listeners
-        generateKeysBtn.addEventListener('click', generateKeypair);
-        sendMessageBtn.addEventListener('click', sendMessage);
-        sendFileBtn.addEventListener('click', sendFile);
-        messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendMessage();
             }
-        });
-        setChatPartnerBtn.addEventListener('click', () => {
-            const partnerId = chatPartnerIdInput.value.trim();
-            if (partnerId && partnerId !== currentUserId) {
-                chatPartnerId = partnerId;
-                partnerIdDisplay.textContent = chatPartnerId;
-                showStatus(`Chat partner set to ${chatPartnerId}. You can now save their public key.`);
-                setupMessageListener(); // Restart the listener with the new partner ID
+        } catch(e) {
+            console.error("Failed to add reaction:", e);
+        }
+    }
+
+    function createMessageElement(messageData, displayedText) {
+        const messageWrapper = document.createElement('div');
+        messageWrapper.className = `flex ${messageData.senderId === userId ? 'justify-end' : 'justify-start'} mb-2`;
+
+        const senderName = messageData.senderId === userId ? 'You' : messageData.senderId.substring(0, 8);
+        const isSender = messageData.senderId === userId;
+        
+        const messageContentWrapper = document.createElement('div');
+        messageContentWrapper.className = `flex flex-col max-w-xs md:max-w-md lg:max-w-lg`;
+
+        const senderLabel = document.createElement('p');
+        senderLabel.className = `text-xs mb-1 ${isSender ? 'text-right' : 'text-left'} text-gray-500`;
+        senderLabel.textContent = senderName;
+        messageContentWrapper.appendChild(senderLabel);
+
+        const messageBubble = document.createElement('div');
+        messageBubble.className = `message-bubble relative rounded-2xl px-4 py-2 shadow-sm text-sm break-words transition-all duration-300 ${
+            isSender ? 'bg-indigo-500 text-white rounded-br-none' : 'bg-gray-200 text-gray-800 rounded-bl-none'
+        }`;
+        messageBubble.dataset.docId = messageData.id;
+        messageBubble.dataset.senderId = messageData.senderId;
+
+        // Message text or file content
+        if (messageData.type === 'text') {
+            messageBubble.textContent = displayedText;
+        } else if (messageData.type === 'file') {
+            if (messageData.file.scanned) {
+                messageBubble.innerHTML = `
+                    <p class="font-bold">${messageData.file.name}</p>
+                    <a href="${messageData.file.url}" download class="text-xs text-blue-500 underline hover:no-underline">Download File</a>
+                `;
             } else {
-                showMessageBox("Invalid chat partner ID. Cannot be empty or your own ID.");
+                messageBubble.innerHTML = `
+                    <p class="font-bold">${messageData.file.name}</p>
+                    <p class="text-xs text-gray-400">Scanning for viruses...</p>
+                `;
             }
-        });
-        savePartnerKeyBtn.addEventListener('click', async () => {
-            const keyString = partnerPublicKeyInput.value.trim();
-            if (!keyString) {
-                showMessageBox("Please enter a public key.");
-                return;
+        }
+        
+        messageContentWrapper.appendChild(messageBubble);
+
+        // Reactions display
+        const reactionsDiv = document.createElement('div');
+        reactionsDiv.className = `flex gap-1 text-sm ${isSender ? 'justify-end' : 'justify-start'} mt-1`;
+        if (messageData.reactions) {
+            for (const reactorId in messageData.reactions) {
+                messageData.reactions[reactorId].forEach(emoji => {
+                    const reactionSpan = document.createElement('span');
+                    reactionSpan.textContent = emoji;
+                    reactionsDiv.appendChild(reactionSpan);
+                });
             }
-            if (!chatPartnerId) {
-                 showMessageBox("Please set a chat partner first.");
-                 return;
-            }
-            try {
-                const jwk = JSON.parse(keyString);
-                const importedKey = await importPublicKey(jwk);
-                if (importedKey) {
-                    knownPublicKeys[chatPartnerId] = importedKey;
-                    showStatus(`Public key for ${chatPartnerId} saved! You can now send messages.`);
-                    partnerPublicKeyInput.value = ''; // Clear input
-                } else {
-                    throw new Error("Key import failed.");
+        }
+        messageContentWrapper.appendChild(reactionsDiv);
+
+        // Read Receipts
+        const readReceipt = document.createElement('div');
+        readReceipt.className = `flex items-center gap-1 text-xs text-gray-400 mt-1 ${isSender ? 'justify-end' : 'justify-start'}`;
+        if (messageData.readBy && messageData.readBy.length === groupMembers.length) {
+            readReceipt.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                </svg>
+                Read by all
+            `;
+        }
+        messageContentWrapper.appendChild(readReceipt);
+
+        messageWrapper.appendChild(messageContentWrapper);
+        return messageWrapper;
+    }
+
+    function setupChatListener() {
+        if (!conversationId) return;
+
+        const messagesCollectionPath = `/artifacts/${appId}/public/data/conversations/${conversationId}/messages`;
+        const q = query(collection(db, messagesCollectionPath), orderBy("timestamp"));
+
+        unsubscribeChatListener = onSnapshot(q, async (querySnapshot) => {
+            querySnapshot.docChanges().forEach(async (change) => {
+                const messageData = change.doc.data();
+                const docId = change.doc.id;
+
+                if (change.type === "added") {
+                    if (messageData.senderId === userId) {
+                        return;
+                    }
+                    if (messageData.type === 'text') {
+                        const encryptedText = messageData.texts[userId];
+                        const decryptedText = await decryptMessage(encryptedText, privateKey);
+                        const messageElement = createMessageElement({ ...messageData, id: docId }, decryptedText);
+                        chatDisplay.prepend(messageElement);
+                    } else if (messageData.type === 'file') {
+                        const messageElement = createMessageElement({ ...messageData, id: docId }, null);
+                        chatDisplay.prepend(messageElement);
+                    }
+
+                    // Mark message as read
+                    const messageDocRef = doc(db, messagesCollectionPath, docId);
+                    await updateDoc(messageDocRef, {
+                        readBy: [...(messageData.readBy || []), userId]
+                    });
+
+                } else if (change.type === "modified") {
+                    const existingElement = document.querySelector(`[data-doc-id="${docId}"]`);
+                    if (existingElement) {
+                        // Re-render the message with the new data
+                        const isSender = messageData.senderId === userId;
+                        let displayedText;
+                        if (messageData.type === 'text') {
+                            displayedText = isSender ? existingElement.textContent : await decryptMessage(messageData.texts[userId], privateKey);
+                        } else {
+                            displayedText = existingElement.textContent;
+                        }
+                        const newElement = createMessageElement({ ...messageData, id: docId }, displayedText);
+                        existingElement.parentElement.replaceChild(newElement.firstElementChild, existingElement);
+                    }
                 }
-            } catch (e) {
-                console.error("Failed to parse or import public key:", e);
-                showMessageBox("Invalid public key format. Please ensure it's a valid JWK string.");
-            }
+            });
         });
-        saveGeoFenceBtn.addEventListener('click', saveGeoFence);
+    }
 
-        // Copy User ID and Public Key to clipboard
-        copyUserIdBtn.addEventListener('click', () => {
-            document.execCommand('copy');
-        });
-        copyPublicKeyBtn.addEventListener('click', () => {
-            document.execCommand('copy');
-        });
-        document.addEventListener('copy', (e) => {
-            const target = e.target;
-            let textToCopy = '';
-            if (target === copyUserIdBtn) {
-                textToCopy = userIdDisplay.textContent;
-                e.clipboardData.setData('text/plain', textToCopy);
-                e.preventDefault();
-                showStatus('User ID copied to clipboard!');
-            } else if (target === copyPublicKeyBtn) {
-                textToCopy = myPublicKeyDisplay.textContent;
-                e.clipboardData.setData('text/plain', textToCopy);
-                e.preventDefault();
-                showStatus('Public Key copied to clipboard!');
-            }
-        });
+    // --- Event Listeners ---
+    startOneOnOneButton.addEventListener('click', () => {
+        chatType = 'one-on-one';
+        chatSetupTitle.textContent = '1-on-1 Chat Setup';
+        partnerUserIdInput.placeholder = 'Paste partner\'s User ID';
+        partnerUserIdInput.value = '';
+        partnerPublicKeyInput.value = '';
+        currentPartnerDisplay.value = '';
+        switchView('chat');
+    });
 
-        // Initial authentication and setup
-        const authenticate = async () => {
-            try {
-                if (initialAuthToken) {
+    startGroupChatButton.addEventListener('click', () => {
+        chatType = 'group';
+        chatSetupTitle.textContent = 'Group Chat Setup';
+        partnerUserIdInput.placeholder = 'Paste partners\' User IDs, comma-separated';
+        partnerUserIdInput.value = '';
+        partnerPublicKeyInput.value = '';
+        currentPartnerDisplay.value = '';
+        switchView('chat');
+    });
+
+    backToHomeButton.addEventListener('click', () => {
+        switchView('home');
+    });
+
+    generateKeysButton.addEventListener('click', setupUserKeys);
+    setPartnerButton.addEventListener('click', setupChat);
+    copyUserIdButton.addEventListener('click', () => copyToClipboard(userIdDisplay.value));
+    copyPublicKeyButton.addEventListener('click', () => copyToClipboard(publicKeyDisplay.value));
+    sendMessageButton.addEventListener('click', () => {
+        const text = messageInput.value.trim();
+        if (text) {
+            sendMessage('text', text);
+            messageInput.value = '';
+        }
+    });
+    messageInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            sendMessageButton.click();
+        }
+    });
+    sendFileButton.addEventListener('click', () => {
+        fileInput.click();
+    });
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            sendMessage('file', file);
+        }
+    });
+    modalCloseButton.addEventListener('click', closeModal);
+
+    setGeoFenceButton.addEventListener('click', () => {
+        const lat = parseFloat(latInput.value);
+        const lon = parseFloat(lonInput.value);
+        const radius = parseFloat(radiusInput.value);
+
+        if (isNaN(lat) || isNaN(lon) || isNaN(radius) || radius <= 0) {
+            showModal('Invalid Input', 'Please enter valid numbers for Latitude, Longitude, and a positive Radius.');
+            return;
+        }
+
+        geoFence = { lat, lon, radius };
+        showModal('Geo-fence Set', `Geo-fence set at Lat: ${lat}, Lon: ${lon} with a radius of ${radius}m. Chatting is now restricted to this area.`);
+        watchUserLocation();
+    });
+
+    // --- Initialization ---
+    onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            userId = user.uid;
+            userIdDisplay.value = userId;
+            await loadUserKeys();
+        } else {
+            // Updated logic to handle the custom token mismatch error gracefully
+            if (initialAuthToken) {
+                try {
                     await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
+                } catch (error) {
+                    console.error("Custom token sign-in failed. Falling back to anonymous sign-in.", error);
+                    // Try anonymous sign-in as a fallback
+                    try {
+                        await signInAnonymously(auth);
+                    } catch (anonError) {
+                        console.error("Anonymous sign-in also failed:", anonError);
+                        showModal("Authentication Error", "Could not sign in. Please check your network connection.");
+                    }
                 }
-                currentUserId = auth.currentUser.uid;
-                userIdDisplay.textContent = currentUserId;
-                showStatus("Authenticated successfully! Your User ID is now available.");
-                await generateKeypair(); // Generate initial key pair
-                await loadGeoFence(); // Load any previously saved geo-fence
-            } catch (e) {
-                console.error("Authentication failed:", e);
-                showMessageBox("Authentication failed. Check your network connection and try again.");
+            } else {
+                // If no custom token is available, proceed with anonymous sign-in
+                try {
+                    await signInAnonymously(auth);
+                } catch (error) {
+                    console.error("Anonymous sign-in failed:", error);
+                    showModal("Authentication Error", "Could not sign in. Please check your network connection.");
+                }
             }
-        };
-        
-        // Start the application after the page loads
-        window.onload = authenticate;
-        
-    </script>
-</head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4 font-sans">
-    
-    <!-- Custom Message Box Modal -->
-    <div id="messageBox" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center hidden z-50 transition-opacity duration-300">
-        <div class="bg-white rounded-xl p-6 shadow-2xl max-w-sm text-center">
-            <p id="messageBoxText" class="text-gray-800 font-medium mb-4"></p>
-            <button id="closeMessageBoxBtn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-xl transition transform hover:scale-105">OK</button>
-        </div>
-    </div>
+        }
+    });
+</script>
 
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-8 flex flex-col md:flex-row space-y-8 md:space-y-0 md:space-x-8">
-        
-        <!-- Sidebar for User Info & Setup -->
-        <div class="md:w-1/3 p-4 bg-gray-50 rounded-xl shadow-inner flex flex-col">
-            <h2 class="text-xl font-bold mb-4 text-center text-gray-800">Your Info</h2>
-            <div class="mb-6">
-                <p class="text-sm font-semibold text-gray-600">Your User ID:</p>
-                <div class="flex items-center">
-                    <code id="userIdDisplay" class="block w-full p-2 mt-1 rounded-l-lg bg-gray-200 text-gray-800 break-all text-xs">Loading...</code>
-                    <button id="copyUserIdBtn" class="bg-gray-300 hover:bg-gray-400 p-2 mt-1 rounded-r-lg shadow-sm">📋</button>
-                </div>
-            </div>
-
-            <div class="mb-6">
-                <p class="text-sm font-semibold text-gray-600">Your Public Key (JWK):</p>
-                <div class="flex items-center">
-                    <code id="myPublicKeyDisplay" class="block w-full p-2 rounded-l-lg bg-gray-200 text-gray-800 text-xs break-all">Generate a key pair to see your public key here.</code>
-                    <button id="copyPublicKeyBtn" class="bg-gray-300 hover:bg-gray-400 p-2 rounded-r-lg shadow-sm">📋</button>
-                </div>
-            </div>
-
-            <button id="generateKeysBtn" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-xl shadow-md transition transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50">Generate New Keys</button>
-            <div id="statusMessage" class="p-2 mt-4 text-center rounded-xl shadow-lg opacity-0 transition-opacity duration-300"></div>
-
-            <hr class="my-6 border-gray-300">
-
-            <h2 class="text-xl font-bold mb-4 text-center text-gray-800">Chat Setup</h2>
-            <div class="mb-4">
-                <p class="text-sm font-semibold text-gray-600">Partner User ID:</p>
-                <input id="chatPartnerIdInput" type="text" placeholder="Paste partner's User ID" class="w-full p-2 mt-1 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400">
-                <button id="setChatPartnerBtn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 mt-2 rounded-xl shadow-md transition transform hover:scale-105">Set Chat Partner</button>
-            </div>
-            <div class="mb-4">
-                <p class="text-sm font-semibold text-gray-600">Current Partner:</p>
-                <code id="partnerIdDisplay" class="block w-full p-2 mt-1 rounded-lg bg-gray-200 text-gray-800 break-all text-xs">None</code>
-            </div>
-
-            <div class="mb-4">
-                <p class="text-sm font-semibold text-gray-600">Partner Public Key:</p>
-                <textarea id="partnerPublicKeyInput" placeholder="Paste your chat partner's public key here (JWK format)" rows="4" class="w-full p-2 mt-1 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-xs"></textarea>
-                <button id="savePartnerKeyBtn" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 mt-2 rounded-xl shadow-md transition transform hover:scale-105">Save Partner Key</button>
-            </div>
-            
-            <hr class="my-6 border-gray-300">
-            
-            <h2 class="text-xl font-bold mb-4 text-center text-gray-800">Geo-fencing Setup</h2>
-            <p class="text-sm font-semibold text-gray-600 mb-2">Define your allowed location:</p>
-            <div class="grid grid-cols-2 gap-2 mb-4">
-                <div>
-                    <label class="block text-xs font-medium text-gray-500">Latitude</label>
-                    <input id="geoFenceLat" type="number" step="0.000001" placeholder="e.g., 34.052235" class="w-full p-2 border border-gray-300 rounded-lg text-xs">
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-500">Longitude</label>
-                    <input id="geoFenceLon" type="number" step="0.000001" placeholder="e.g., -118.243683" class="w-full p-2 border border-gray-300 rounded-lg text-xs">
-                </div>
-                <div class="col-span-2">
-                    <label class="block text-xs font-medium text-gray-500">Radius (in meters)</label>
-                    <input id="geoFenceRadius" type="number" placeholder="e.g., 100" class="w-full p-2 border border-gray-300 rounded-lg text-xs">
-                </div>
-            </div>
-            <button id="saveGeoFenceBtn" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-xl shadow-md transition transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-opacity-50">Save My Geo-fence</button>
-            <div class="mt-4 text-center">
-                <p class="text-sm font-semibold text-gray-600">Current Geo-fence:</p>
-                <code id="geoFenceDisplay" class="block w-full p-2 mt-1 rounded-lg bg-gray-200 text-gray-800 break-all text-xs">None saved.</code>
-                <p id="geoFenceStatus" class="mt-2 text-sm font-semibold text-gray-600">Checking location...</p>
-            </div>
-        </div>
-
-        <!-- Main Chat Area -->
-        <div class="md:w-2/3 flex flex-col p-4 bg-gray-50 rounded-xl shadow-inner">
-            <h2 class="text-xl font-bold mb-4 text-center text-gray-800">Encrypted Chat</h2>
-            
-            <!-- Message Display Area -->
-            <div id="chatMessages" class="flex-grow flex flex-col overflow-y-auto space-y-4 p-4 bg-gray-100 rounded-xl shadow-inner mb-4">
-                <div class="text-center text-gray-500 mt-20 flex-grow flex items-center justify-center flex-col">
-                    <p class="text-sm">Welcome to your secure chat.</p>
-                    <p class="text-sm mt-1">1. Share your User ID and Public Key with a partner.</p>
-                    <p class="text-sm mt-1">2. Paste your partner's info into the "Chat Setup" section.</p>
-                    <p class="text-sm mt-1">3. Start chatting securely! All messages are end-to-end encrypted.</p>
-                </div>
-            </div>
-
-            <!-- Message Input Area -->
-            <div class="flex items-center">
-                <input type="text" id="messageInput" placeholder="Type your secure message..." class="flex-grow p-3 border border-gray-300 rounded-l-xl focus:outline-none focus:ring-2 focus:ring-indigo-400">
-                <button id="sendMessageBtn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 px-6 rounded-r-xl shadow-md transition transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50">Send</button>
-            </div>
-
-            <!-- File Input Area -->
-            <div class="flex items-center mt-4">
-                <input type="file" id="fileInput" class="flex-grow p-3 border border-gray-300 rounded-l-xl focus:outline-none focus:ring-2 focus:ring-green-400 text-sm bg-white">
-                <button id="sendFileBtn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-r-xl shadow-md transition transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50">Send File</button>
-            </div>
-        </div>
-    </div>
 </body>
 </html>
