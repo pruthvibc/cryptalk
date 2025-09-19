@@ -1,10 +1,3 @@
-<!-- 
-    This is a single-file, self-contained HTML document for a secure, end-to-end encrypted chat application.
-    It uses Firebase Firestore for real-time messaging, and the Web Cryptography API for end-to-end encryption.
-    The layout uses Tailwind CSS for modern, responsive styling.
-    This version includes a new home page and full support for group chats, but keeps the original geo-fencing and core logic intact.
--->
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -60,21 +53,27 @@
 <body>
 
 <!-- Main App Container -->
-<div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl flex flex-col md:flex-row h-[90vh]">
-    
-    <!-- Home Page View (initial state) -->
-    <div id="homeView" class="w-full h-full flex flex-col items-center justify-center p-6 text-center">
-        <h1 class="text-4xl font-bold text-gray-800 mb-6">Secure Chat App</h1>
-        <p class="text-gray-600 mb-10 max-w-lg">Choose a chat type to get started. All conversations are End-to-End Encrypted, ensuring only you and your partners can read your messages.</p>
-        <div class="space-y-4 w-full max-w-sm">
-            <button id="startOneOnOne" class="w-full bg-indigo-600 text-white font-bold py-4 px-6 rounded-lg shadow-md hover:bg-indigo-700 transition-colors transform hover:scale-105">
-                Start a 1-on-1 Chat
-            </button>
-            <button id="startGroupChat" class="w-full bg-green-500 text-white font-bold py-4 px-6 rounded-lg shadow-md hover:bg-green-600 transition-colors transform hover:scale-105">
-                Start a Group Chat
-            </button>
-        </div>
+<div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl flex flex-col md:flex-row h-[90vh] max-h-[90vh] overflow-y-auto">
+    <div class="space-y-4 w-full max-w-sm">
+        <button id="openChatOptions" class="w-full bg-indigo-600 text-white font-bold py-4 px-6 rounded-lg shadow-md hover:bg-indigo-700 transition-colors transform hover:scale-105">
+            Chat
+        </button>
     </div>
+     <!-- Page: Dashboard (Home Page View) -->
+        <div id="chatOptionsModal" class="fixed inset-0 z-50 bg-black bg-opacity-50 hidden items-center justify-center">
+            <div class="bg-white rounded-xl shadow-lg p-6 w-80 text-center">
+                <h3 class="text-xl font-bold mb-4">Choose Chat Type</h3>
+                <div class="space-y-3">
+                    <button id="chatOptionOneOnOne" class="w-full bg-indigo-600 text-white font-medium py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors">
+                        1-on-1 Chat
+                    </button>
+                    <button id="chatOptionGroup" class="w-full bg-green-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-green-600 transition-colors">
+                        Group Chat
+                    </button>
+                </div>
+                <button id="closeChatOptions" class="mt-4 px-6 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition-colors">Cancel</button>
+            </div>
+        </div>
 
     <!-- Chat Interface View (hidden by default) -->
     <div id="chatView" class="w-full h-full flex flex-col md:flex-row hidden">
@@ -207,6 +206,69 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, collection, doc, setDoc, addDoc, onSnapshot, query, orderBy, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    document.addEventListener('DOMContentLoaded', () => {
+        const openChatOptions = document.getElementById('openChatOptions');
+        const chatOptionsModal = document.getElementById('chatOptionsModal');
+        const chatOptionOneOnOne = document.getElementById('chatOptionOneOnOne');
+        const chatOptionGroup = document.getElementById('chatOptionGroup');
+        const closeChatOptions = document.getElementById('closeChatOptions');
+        const chatView = document.getElementById('chatView');
+        const mainContainer = document.querySelector('.bg-white.rounded-2xl'); // main wrapper
+        const sidebar = mainContainer.querySelector('div.space-y-4'); // left sidebar with "Chat" button
+        const backToHomeButton = document.getElementById('backToHomeButton');
+        const openChatOptionsContainer = document.querySelector('.space-y-4'); // the container with the Chat button
+
+        // Input placeholders (optional, clear when opening chat)
+        const partnerUserIdInput = document.getElementById('partnerUserIdInput');
+        const partnerPublicKeyInput = document.getElementById('partnerPublicKeyInput');
+        const currentPartnerDisplay = document.getElementById('currentPartnerDisplay');
+        const chatSetupTitle = document.getElementById('chatSetupTitle');
+        // Open chat options modal
+        openChatOptions.addEventListener('click', () => {
+            chatOptionsModal.classList.remove('hidden');
+            chatOptionsModal.classList.add('flex');
+        });
+
+        // Close modal
+        closeChatOptions.addEventListener('click', () => {
+            chatOptionsModal.classList.add('hidden');
+            chatOptionsModal.classList.remove('flex');
+        });
+
+        // 1-on-1 Chat selection
+        chatOptionOneOnOne.addEventListener('click', () => {
+            chatOptionsModal.classList.add('hidden');
+            chatOptionsModal.classList.remove('flex');
+            sidebar.classList.add('hidden');   // hide the Chat button panel
+            chatView.classList.remove('hidden');
+            chatSetupTitle.textContent = '1-on-1 Chat Setup';
+
+            if (partnerUserIdInput) partnerUserIdInput.value = '';
+            if (partnerPublicKeyInput) partnerPublicKeyInput.value = '';
+            if (currentPartnerDisplay) currentPartnerDisplay.value = '';
+        });
+
+        /// Group Chat selection
+        chatOptionGroup.addEventListener('click', () => {
+            chatOptionsModal.classList.add('hidden');
+            chatOptionsModal.classList.remove('flex');
+            sidebar.classList.add('hidden');   // hide the Chat button panel
+            chatView.classList.remove('hidden');
+            chatSetupTitle.textContent = 'Group Chat Setup';
+
+            if (partnerUserIdInput) partnerUserIdInput.value = '';
+            if (partnerPublicKeyInput) partnerPublicKeyInput.value = '';
+            if (currentPartnerDisplay) currentPartnerDisplay.value = '';
+        });
+
+        backToHomeButton.addEventListener('click', () => {
+            // Hide chat view
+            chatView.classList.add('hidden');
+
+            // Show only the Chat button section again
+            openChatOptionsContainer.classList.remove('hidden');
+        });
+    });
 
     // Global variables from the hosting environment
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -743,7 +805,7 @@
     }
 
     // --- Event Listeners ---
-    startOneOnOneButton.addEventListener('click', () => {
+    chatOptionOneOnOne.addEventListener('click', () => {
         chatType = 'one-on-one';
         chatSetupTitle.textContent = '1-on-1 Chat Setup';
         partnerUserIdInput.placeholder = 'Paste partner\'s User ID';
@@ -753,7 +815,7 @@
         switchView('chat');
     });
 
-    startGroupChatButton.addEventListener('click', () => {
+    chatOptionGroup.addEventListener('click', () => {
         chatType = 'group';
         chatSetupTitle.textContent = 'Group Chat Setup';
         partnerUserIdInput.placeholder = 'Paste partners\' User IDs, comma-separated';
